@@ -41,6 +41,12 @@ for i, it in enumerate(items):
     pc = it.get("postcode") or ""
     street = re.search(r"((?:Jalan|Jln\.?|Lorong|Persiaran)\s[^,]+?)(?=,|\s\d{5}|$)", it["address"], re.I)
     tries = [(f"{it['name']}, {pc}, {region}", "poi")]
+    # JAIS names often carry extras OSM doesn't ("Masjid Kariah X, Seri Kembangan").
+    short = re.sub(r"\b(kariah|jamek|kampung|kg\.?)\b", " ", it["name"].split(",")[0], flags=re.I)
+    short = " ".join(re.sub(r"\bsek(?:syen)?\.?\s*\w+$", "", short, flags=re.I).split())
+    for variant in dict.fromkeys([it["name"].split(",")[0].strip(), short]):
+        if it.get("district"):
+            tries.append((f"{variant}, {it['district']}, {region}", "poi"))
     if street: tries.append((f"{street.group(1).replace('Jln.', 'Jalan').replace('Jln', 'Jalan')}, {pc}, {region}", "street"))
     if pc: tries.append((f"{pc}, {region}, Malaysia", "postcode"))
     it["lat"] = it["lng"] = None; it["precision"] = None
