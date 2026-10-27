@@ -200,9 +200,10 @@
       .filter((o) => o.lat && distanceM(here, o) <= SEARCH_RADIUS_M);
     official.forEach((o) => {
       const dup = live.find((p) => distanceM(p, o) < 60 || (distanceM(p, o) < 400 && sameName(p.name, o.name)));
-      const tag = { jumaat: true, official: o.source, info: o.address, key: o.key };
-      if (dup) Object.assign(dup, tag, { info: dup.info || o.address });
-      else live.push({ name: o.name, lat: o.lat, lng: o.lng, kind: "surau", approx: o.precision === "postcode", pinOf: o, ownFix: o.ownFix, ...tag });
+      const kind = o.status === "masjid" ? "masjid" : "surau";
+      const tag = { jumaat: true, official: o.source, info: o.address, key: o.key, capacity: o.capacity };
+      if (dup) Object.assign(dup, tag, { kind: dup.kind === "masjid" ? "masjid" : kind, info: dup.info || o.address });
+      else live.push({ name: o.name, lat: o.lat, lng: o.lng, kind, approx: o.precision === "postcode", pinOf: o, ownFix: o.ownFix, ...tag });
     });
     live.forEach((p) => { p.key = p.key || placeKey(p); });
     return { places: live, offline: elements === null };
@@ -374,7 +375,9 @@
       const li = tpl.content.firstElementChild.cloneNode(true);
       li.querySelector(".name").textContent = p.name;
       const sh = state.shared[p.key];
-      li.querySelector(".official").textContent = p.official ? `✔ Approved for Jumaat · ${p.official}`
+      li.querySelector(".official").textContent = p.official
+        ? `✔ ${p.kind === "masjid" ? "Official masjid" : "Approved for Jumaat"} · ${p.official}`
+          + (p.capacity ? ` · fits ~${p.capacity.toLocaleString("en-MY")}` : "")
         : sh && sh.yes > sh.no ? `👥 ${sh.yes} ${sh.yes === 1 ? "person" : "people"} confirmed Jumaat here` : "";
       li.querySelector(".crowd").textContent = (sh && sh.crowd || [])
         .map((c) => `👥 “${c.note}” · ${ago(c.at)}`).join("\n");
