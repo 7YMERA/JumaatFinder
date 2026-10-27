@@ -48,20 +48,28 @@ and limits each person to 20 reports an hour. Optionally set `IP_SALT` to a
 random string in the project's environment variables.
 
 ## Official data
-`data/surau_jumaat_selangor.json` holds the **113 surau approved for Solat Jumaat**
-listed on the [JAIS e-Masjid](https://e-masjid.jais.gov.my/dashboard/listsuraujumaat)
-portal (Petaling, Hulu Langat, Hulu Selangor, Gombak, Klang), geocoded with
-OpenStreetMap Nominatim. `precision` says how each pin was found: `poi` (the
-surau itself), `street`, or `postcode` (approximate; shown with ≈ in the app).
-JAIS's portal does not list all of the state's approved surau, so a missing
-surau may still hold Jumaat.
+Both lists come from the [JAIS e-Masjid](https://e-masjid.jais.gov.my) portal
+(Selangor) and are geocoded with OpenStreetMap Nominatim:
 
-Refresh it:
+- `data/masjid_selangor.json` — all **452 official masjid** in Selangor, with
+  address, category and **capacity** where JAIS lists it (344 of them).
+- `data/surau_jumaat_selangor.json` — **113 surau approved for Solat Jumaat**
+  (Petaling, Hulu Langat, Hulu Selangor, Gombak, Klang). JAIS's portal does not
+  list all of the state's approved surau, so a missing surau may still hold Jumaat.
+
+`precision` says how each pin was found: `poi` (the place itself), `street`, or
+`postcode`. Postcode-level places (about half of the masjid) are shown without a
+walking time, since a postcode area can span several km; Maps/Waze links search
+them by name instead, and users can tap 📍 to fix the pin.
+
+Refresh it (takes ~1 hour, mostly polite one-per-second geocoding):
 
 ```bash
 python3 scripts/scrape_jais.py > data/surau_jumaat_selangor.raw.json
+python3 scripts/scrape_jais_masjid.py > data/masjid_selangor.raw.json
 python3 scripts/geocode.py data/surau_jumaat_selangor.raw.json data/surau_jumaat_selangor.json
-python3 scripts/build_official.py data/surau_jumaat_*.json > data/official.js
+python3 scripts/geocode.py data/masjid_selangor.raw.json data/masjid_selangor.json
+python3 scripts/build_official.py data/surau_jumaat_selangor.json data/masjid_selangor.json > data/official.js
 ```
 
 KL (JAWI) is not included yet.

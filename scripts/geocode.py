@@ -13,7 +13,7 @@ try: cache = json.load(open(cache_path))
 except Exception: cache = {}
 def q(text):
     if text in cache: return cache[text]
-    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({"q": text, "format": "jsonv2", "limit": 1, "countrycodes": "my"})
+    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({"q": text, "format": "jsonv2", "limit": 5, "countrycodes": "my"})
     for _ in range(3):
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30) as r:
@@ -24,6 +24,9 @@ def q(text):
     time.sleep(1.1)
     hit = None
     for h in res:
+        # Bus stops are often named after the masjid ("Masjid X (Opp)"): skip them.
+        if h.get("category") in ("highway", "public_transport", "railway") or "(Opp)" in h.get("display_name", ""):
+            continue
         lat, lon = float(h["lat"]), float(h["lon"])
         if 2.4 < lat < 3.95 and 100.7 < lon < 102.1:  # Selangor / KL / Putrajaya
             hit = {"lat": round(lat, 6), "lng": round(lon, 6), "match": h.get("display_name", "")}

@@ -199,7 +199,13 @@
       })
       .filter((o) => o.lat && distanceM(here, o) <= SEARCH_RADIUS_M);
     official.forEach((o) => {
-      const dup = live.find((p) => distanceM(p, o) < 60 || (distanceM(p, o) < 400 && sameName(p.name, o.name)));
+      // Postcode-level entries can be ~3 km off, so they match a same-named OSM place further away.
+      const nameRadius = o.precision === "postcode" ? 3000 : 400;
+      // Merge on position alone only with an OSM place and only when both positions are real
+      // (several listed places can share one postcode-level point).
+      const exact = o.precision !== "postcode";
+      const dup = live.find((p) => (exact && !p.official && !p.approx && distanceM(p, o) < 60)
+        || (distanceM(p, o) < nameRadius && sameName(p.name, o.name)));
       const kind = o.status === "masjid" ? "masjid" : "surau";
       const tag = { jumaat: true, official: o.source, info: o.address, key: o.key, capacity: o.capacity };
       if (dup) Object.assign(dup, tag, { kind: dup.kind === "masjid" ? "masjid" : kind, info: dup.info || o.address });
@@ -263,7 +269,7 @@
 
   // "Surau Al-Huda" vs "SURAU AL HUDA (Taman X)" -> same core name.
   function coreName(n) {
-    return (n || "").toLowerCase().replace(/\(.*?\)/g, " ").replace(/\b(surau|masjid|musolla|jumaat|solat)\b/g, " ")
+    return (n || "").toLowerCase().replace(/\(.*?\)/g, " ").replace(/\b(surau|masjid|musolla|jumaat|solat|kariah|jamek)\b/g, " ")
       .replace(/[^a-z0-9]+/g, "");
   }
   function sameName(a, b) {
@@ -298,6 +304,7 @@
     let chip;
     if (status === "no") chip = { cls: "surau", txt: "No Jumaat" };
     else if (status === "unknown") chip = { cls: "surau", txt: "Jumaat? unconfirmed" };
+    else if (place.approx) chip = { cls: "surau", txt: "Check location" };
     else if (minsLeft < 0) chip = { cls: "bad", txt: "Too late on foot" };
     else if (minsLeft < 15) chip = { cls: "warn", txt: "Leave now" };
     else chip = { cls: "ok", txt: "On track" };
@@ -353,8 +360,10 @@
     const rows = state.places
       .filter((p) => !onlyConfirmed || jumaatStatus(p) === "yes")
       .map((p) => ({ p, plan: plan(p) }))
-      // Nearest first, but places marked "No Jumaat" sink to the bottom (kept so they can be unmarked).
-      .sort((a, b) => (a.plan.status === "no") - (b.plan.status === "no") || a.plan.dist - b.plan.dist);
+      // Nearest first; places with only a postcode-level position come after those we can
+      // actually place, and "No Jumaat" ones sink to the bottom (kept so they can be unmarked).
+      .sort((a, b) => (a.plan.status === "no") - (b.plan.status === "no")
+        || !!a.p.approx - !!b.p.approx || a.plan.dist - b.plan.dist);
 
     const list = $("list");
     list.textContent = "";
@@ -382,8 +391,8 @@
       li.querySelector(".crowd").textContent = (sh && sh.crowd || [])
         .map((c) => `👥 “${c.note}” · ${ago(c.at)}`).join("\n");
       li.querySelector(".meta").textContent =
-        `${p.approx ? "≈" : ""}${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`
-        + (p.approx ? " (location approx. — postcode area)" : "") + (p.info ? ` · ${p.info}` : "");
+        (p.approx ? "Somewhere in this postcode area — exact spot unknown" : `${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`)
+        + (p.info ? ` · ${p.info}` : "");
       const chip = li.querySelector(".chip");
       chip.textContent = pl.chip.txt;
       chip.classList.add(pl.chip.cls);
@@ -391,14 +400,20 @@
       li.querySelector(".leave").textContent = pl.status === "no"
         ? (ownMark === "no" ? "You marked this as not holding Jumaat." : "Others reported this doesn't hold Jumaat.") :
         (pl.status === "unknown" ? "Not sure if this surau holds Jumaat — ask once, then mark it below. " : "")
-        + `Leave by ${fmtTime(pl.leaveBy)} to walk there with ${$("bufferSelect").value} min to spare.`
-        + (pl.walkMin > 25 ? " Far on foot — consider Grab/driving, but parking fills early." : "");
+        + (p.approx
+          ? "Open it in Google Maps to see where it really is (and tap 📍 to fix the pin for everyone)."
+          : `Leave by ${fmtTime(pl.leaveBy)} to walk there with ${$("bufferSelect").value} min to spare.`
+            + (pl.walkMin > 25 ? " Far on foot — consider Grab/driving, but parking fills early." : ""));
       const note = store.get(noteKey(p), "");
       li.querySelector(".note-view").textContent = note ? "📝 " + note : "";
 
       const dest = `${p.lat},${p.lng}`;
-      li.querySelector('[data-act="gmaps"]').href = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=walking`;
-      li.querySelector('[data-act="waze"]').href = `https://waze.com/ul?ll=${dest}&navigate=yes`;
+      // Approximate pins: let Maps/Waze find the place by name and address instead.
+      const q = encodeURIComponent(`${p.name}, ${p.info || ""}`);
+      li.querySelector('[data-act="gmaps"]').href = p.approx
+        ? `https://www.google.com/maps/search/?api=1&query=${q}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=walking`;
+      li.querySelector('[data-act="waze"]').href = p.approx ? `https://waze.com/ul?q=${q}` : `https://waze.com/ul?ll=${dest}&navigate=yes`;
       li.querySelector('[data-act="ics"]').addEventListener("click", () => icsFor(p, pl.leaveBy));
       li.querySelector('[data-act="note"]').addEventListener("click", () => {
         const v = prompt(`Note for ${p.name}\n(e.g. "Full by 1:05pm, overflow on level 2 car park")`, note);
@@ -440,7 +455,7 @@
           radius: p.kind === "masjid" ? 9 : 7,
           color: pl.status === "yes" ? "#0f766e" : "#b45309",
           fillOpacity: p.approx ? 0.15 : 0.85, weight: 2, dashArray: p.approx ? "3 3" : null,
-        }).addTo(map).bindPopup(`${p.name.replace(/[<>&]/g, "")}<br>${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`);
+        }).addTo(map).bindPopup(`${p.name.replace(/[<>&]/g, "")}<br>${p.approx ? "Location approximate" : `${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`}`);
         mk.on("click", () => {
           document.querySelectorAll(".item.active").forEach((x) => x.classList.remove("active"));
           li.classList.add("active");
@@ -463,7 +478,9 @@
     }
   }
 
+  let loadSeq = 0;
   async function setHere(here) {
+    const seq = ++loadSeq;
     state.here = here;
     $("placeLabel").textContent = "Near " + here.label;
     store.set("jumaat:last", here);
@@ -474,6 +491,7 @@
     }
     $("status").textContent = "Loading prayer time and nearby mosques…";
     const [z, m] = await Promise.all([loadZuhr(here.lat, here.lng), loadMosques(here), loadShared(here)]);
+    if (seq !== loadSeq) return; // a newer place was picked while this one loaded
     renderHero(z);
     applySharedPins(m.places);
     state.places = m.places;
