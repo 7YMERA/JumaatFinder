@@ -30,6 +30,25 @@ python3 -m http.server 8000   # open http://localhost:8000
 Deploy the folder to any static host (Vercel, Netlify, GitHub Pages).
 GPS needs HTTPS (or localhost).
 
+## Official data
+`data/surau_jumaat_selangor.json` holds the **108 surau approved for Solat Jumaat**
+listed on the [JAIS e-Masjid](https://e-masjid.jais.gov.my/dashboard/listsuraujumaat)
+portal (Petaling, Hulu Langat, Hulu Selangor, Gombak, Klang), geocoded with
+OpenStreetMap Nominatim. `precision` says how each pin was found: `poi` (the
+surau itself), `street`, or `postcode` (approximate; shown with ≈ in the app).
+JAIS's portal does not list all of the state's approved surau, so a missing
+surau may still hold Jumaat.
+
+Refresh it:
+
+```bash
+python3 scripts/scrape_jais.py > data/surau_jumaat_selangor.raw.json
+python3 scripts/geocode.py data/surau_jumaat_selangor.raw.json data/surau_jumaat_selangor.json
+python3 scripts/build_official.py data/surau_jumaat_*.json > data/official.js
+```
+
+KL (JAWI) is not included yet.
+
 ## Adding data
 Edit `data.js`: `JUMAAT_PRESETS` holds the "pick a place" starting points, and
 `JUMAAT_SEED` holds hand-checked places that always show, merged with OpenStreetMap.

@@ -8,6 +8,9 @@ window.JUMAAT_PRESETS = [
   { id: "bangsarsouth", name: "Bangsar South", lat: 3.1110, lng: 101.6655 },
   { id: "klsentral", name: "KL Sentral", lat: 3.1340, lng: 101.6865 },
   { id: "klcc", name: "KLCC", lat: 3.1579, lng: 101.7116 },
+  { id: "oneutama", name: "1 Utama, Petaling Jaya", lat: 3.1502, lng: 101.6152 },
+  { id: "shahalam", name: "Shah Alam (Seksyen 7)", lat: 3.0738, lng: 101.4920 },
+  { id: "bangi", name: "Bandar Baru Bangi", lat: 2.9622, lng: 101.7731 },
 ];
 
 window.JUMAAT_SEED = [
