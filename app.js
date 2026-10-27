@@ -185,7 +185,28 @@
       if (dup) { dup.kind = s.kind; dup.jumaat = s.jumaat; dup.info = s.info || dup.info; }
       else live.push({ ...s });
     });
+
+    // Merge official "Surau Solat Jumaat" lists (JAIS / JAWI). A nearby OSM place
+    // with a matching name takes the official status; otherwise the listed surau
+    // is added with its geocoded position.
+    const official = (window.JUMAAT_OFFICIAL || []).filter((o) => o.lat && distanceM(here, o) <= SEARCH_RADIUS_M);
+    official.forEach((o) => {
+      const dup = live.find((p) => distanceM(p, o) < 60 || (distanceM(p, o) < 400 && sameName(p.name, o.name)));
+      const tag = { jumaat: true, official: o.source, info: o.address };
+      if (dup) Object.assign(dup, tag, { info: dup.info || o.address });
+      else live.push({ name: o.name, lat: o.lat, lng: o.lng, kind: "surau", approx: o.precision === "postcode", ...tag });
+    });
     return { places: live, offline: elements === null };
+  }
+
+  // "Surau Al-Huda" vs "SURAU AL HUDA (Taman X)" -> same core name.
+  function coreName(n) {
+    return (n || "").toLowerCase().replace(/\(.*?\)/g, " ").replace(/\b(surau|masjid|musolla|jumaat|solat)\b/g, " ")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+  function sameName(a, b) {
+    const x = coreName(a), y = coreName(b);
+    return x.length > 2 && y.length > 2 && (x.includes(y) || y.includes(x));
   }
 
   // ---------- Jumaat status ----------
@@ -273,8 +294,10 @@
     rows.forEach(({ p, plan: pl }, i) => {
       const li = tpl.content.firstElementChild.cloneNode(true);
       li.querySelector(".name").textContent = p.name;
+      li.querySelector(".official").textContent = p.official ? `✔ Approved for Jumaat · ${p.official}` : "";
       li.querySelector(".meta").textContent =
-        `${fmtDist(pl.dist)} · ~${pl.walkMin} min walk` + (p.info ? ` · ${p.info}` : "");
+        `${p.approx ? "≈" : ""}${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`
+        + (p.approx ? " (location approx. — postcode area)" : "") + (p.info ? ` · ${p.info}` : "");
       const chip = li.querySelector(".chip");
       chip.textContent = pl.chip.txt;
       chip.classList.add(pl.chip.cls);

@@ -72,6 +72,8 @@ select, .btn {
 .item-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
 .name { font-weight: 600; }
 .meta { color: var(--muted); font-size: 13px; }
+.official { color: var(--ok); font-size: 12px; font-weight: 600; }
+.official:empty { display: none; }
 .leave { margin-top: 6px; font-size: 14px; }
 .note-view { margin-top: 6px; font-size: 13px; background: color-mix(in srgb, var(--brand) 10%, transparent); padding: 6px 8px; border-radius: 8px; }
 .note-view:empty { display: none; }
