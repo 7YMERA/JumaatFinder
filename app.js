@@ -21,6 +21,8 @@
     approxTime: false,
     places: [],
     offline: false,
+    shared: {},        // place key -> shared report aggregate from /api/reports
+    sharedOn: false,   // true once the shared-reports API answered
     markers: [],
     hereMarker: null,
   };
@@ -189,14 +191,73 @@
     // Merge official "Surau Solat Jumaat" lists (JAIS / JAWI). A nearby OSM place
     // with a matching name takes the official status; otherwise the listed surau
     // is added with its geocoded position.
-    const official = (window.JUMAAT_OFFICIAL || []).filter((o) => o.lat && distanceM(here, o) <= SEARCH_RADIUS_M);
+    const official = (window.JUMAAT_OFFICIAL || [])
+      .map((o) => {
+        const fix = store.get(pinKey(o), null);
+        const key = placeKey(o);
+        return fix ? { ...o, key, lat: fix.lat, lng: fix.lng, precision: "fixed", ownFix: true } : { ...o, key };
+      })
+      .filter((o) => o.lat && distanceM(here, o) <= SEARCH_RADIUS_M);
     official.forEach((o) => {
       const dup = live.find((p) => distanceM(p, o) < 60 || (distanceM(p, o) < 400 && sameName(p.name, o.name)));
-      const tag = { jumaat: true, official: o.source, info: o.address };
+      const tag = { jumaat: true, official: o.source, info: o.address, key: o.key };
       if (dup) Object.assign(dup, tag, { info: dup.info || o.address });
-      else live.push({ name: o.name, lat: o.lat, lng: o.lng, kind: "surau", approx: o.precision === "postcode", ...tag });
+      else live.push({ name: o.name, lat: o.lat, lng: o.lng, kind: "surau", approx: o.precision === "postcode", pinOf: o, ownFix: o.ownFix, ...tag });
     });
+    live.forEach((p) => { p.key = p.key || placeKey(p); });
     return { places: live, offline: elements === null };
+  }
+
+  // ---------- shared reports (optional backend: /api/reports) ----------
+  // Stable id for a place across users: its core name + position rounded to ~100 m.
+  function placeKey(p) { return `${coreName(p.name) || "x"}@${p.lat.toFixed(3)},${p.lng.toFixed(3)}`; }
+
+  async function loadShared(here) {
+    try {
+      const data = await fetchJSON(`/api/reports?lat=${here.lat}&lng=${here.lng}`, {}, 8000);
+      state.shared = Object.fromEntries((data.places || []).map((r) => [r.place_key, r]));
+      state.sharedOn = true;
+    } catch {
+      state.shared = {};
+      state.sharedOn = false; // no backend (e.g. opened as plain files): everything stays on this phone
+    }
+  }
+
+  function applySharedPins(places) {
+    places.forEach((p) => {
+      const s = state.shared[p.key];
+      // A shared location fix counts once two people agree on it; your own fix always wins.
+      if (s && s.pins >= 2 && !p.ownFix && s.pin_lat) {
+        Object.assign(p, { lat: +s.pin_lat, lng: +s.pin_lng, approx: false, sharedPin: s.pins });
+      }
+    });
+  }
+
+  function sendReport(p, type, extra = {}) {
+    if (!state.sharedOn) return Promise.resolve(false);
+    const origin = p.pinOf || p;
+    return fetch("/api/reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: p.key, name: p.name, lat: origin.lat, lng: origin.lng, type, ...extra }),
+    }).then((r) => r.ok).catch(() => false);
+  }
+
+  // Key for a user's own correction of an official entry's location.
+  function pinKey(o) { return `jumaat:pin:${o.source}:${o.name}:${o.address}`.toLowerCase(); }
+
+  // Let the user tap the map where a listed surau really is.
+  function startPinFix(p) {
+    if (!map) return;
+    $("status").textContent = `Tap the map where ${p.name} really is.`;
+    $("map").classList.add("picking");
+    $("map").scrollIntoView({ behavior: "smooth", block: "center" });
+    map.once("click", (e) => {
+      $("map").classList.remove("picking");
+      const fix = { lat: +e.latlng.lat.toFixed(6), lng: +e.latlng.lng.toFixed(6) };
+      store.set(pinKey(p.pinOf), fix);
+      sendReport(p, "pin", { pinLat: fix.lat, pinLng: fix.lng }).finally(() => setHere(state.here));
+    });
   }
 
   // "Surau Al-Huda" vs "SURAU AL HUDA (Taman X)" -> same core name.
@@ -218,7 +279,11 @@
     if (mark === "yes" || mark === "no") return mark;
     if (p.jumaat === true) return "yes";
     if (p.jumaat === false) return "no";
-    return p.kind === "masjid" ? "yes" : "unknown";
+    if (p.kind === "masjid") return "yes";
+    const s = state.shared[p.key];
+    if (s && s.yes > s.no) return "yes";
+    if (s && s.no > s.yes) return "no";
+    return "unknown";
   }
 
   // ---------- planning ----------
@@ -236,6 +301,11 @@
     else if (minsLeft < 15) chip = { cls: "warn", txt: "Leave now" };
     else chip = { cls: "ok", txt: "On track" };
     return { dist, walkMin, leaveBy, chip, status };
+  }
+
+  function ago(iso) {
+    const d = Math.round((Date.now() - new Date(iso)) / 86400000);
+    return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
   }
 
   function fmtDist(m) { return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`; }
@@ -290,18 +360,33 @@
     if (map) state.markers.forEach((m) => m.remove());
     state.markers = [];
 
+    // Several listed surau can share one postcode-level point: fan them out on
+    // the map (only) so each pin can be tapped.
+    const stacks = {};
+    rows.forEach((r) => { const k = r.p.lat.toFixed(5) + "," + r.p.lng.toFixed(5); (stacks[k] = stacks[k] || []).push(r); });
+    Object.values(stacks).forEach((g) => g.forEach((r, k) => {
+      const a = (2 * Math.PI * k) / g.length, d = g.length > 1 ? 0.00025 : 0;
+      r.mapPos = [r.p.lat + d * Math.sin(a), r.p.lng + d * Math.cos(a)];
+    }));
+
     const tpl = $("itemTpl");
-    rows.forEach(({ p, plan: pl }, i) => {
+    rows.forEach(({ p, plan: pl, mapPos }, i) => {
       const li = tpl.content.firstElementChild.cloneNode(true);
       li.querySelector(".name").textContent = p.name;
-      li.querySelector(".official").textContent = p.official ? `✔ Approved for Jumaat · ${p.official}` : "";
+      const sh = state.shared[p.key];
+      li.querySelector(".official").textContent = p.official ? `✔ Approved for Jumaat · ${p.official}`
+        : sh && sh.yes > sh.no ? `👥 ${sh.yes} ${sh.yes === 1 ? "person" : "people"} confirmed Jumaat here` : "";
+      li.querySelector(".crowd").textContent = (sh && sh.crowd || [])
+        .map((c) => `👥 “${c.note}” · ${ago(c.at)}`).join("\n");
       li.querySelector(".meta").textContent =
         `${p.approx ? "≈" : ""}${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`
         + (p.approx ? " (location approx. — postcode area)" : "") + (p.info ? ` · ${p.info}` : "");
       const chip = li.querySelector(".chip");
       chip.textContent = pl.chip.txt;
       chip.classList.add(pl.chip.cls);
-      li.querySelector(".leave").textContent = pl.status === "no" ? "You marked this as not holding Jumaat." :
+      const ownMark = store.get(markKey(p), null);
+      li.querySelector(".leave").textContent = pl.status === "no"
+        ? (ownMark === "no" ? "You marked this as not holding Jumaat." : "Others reported this doesn't hold Jumaat.") :
         (pl.status === "unknown" ? "Not sure if this surau holds Jumaat — ask once, then mark it below. " : "")
         + `Leave by ${fmtTime(pl.leaveBy)} to walk there with ${$("bufferSelect").value} min to spare.`
         + (pl.walkMin > 25 ? " Far on foot — consider Grab/driving, but parking fills early." : "");
@@ -318,15 +403,27 @@
         store.set(noteKey(p), v.trim());
         render();
       });
-      const userMarked = store.get(markKey(p), null) !== null;
-      const mark = (v) => { store.set(markKey(p), v); render(); };
+      const userMarked = ownMark !== null;
+      const mark = (v) => { store.set(markKey(p), v); sendReport(p, v === "yes" ? "jumaat_yes" : "jumaat_no"); render(); };
+      const btnCrowd = li.querySelector('[data-act="crowd"]');
+      btnCrowd.hidden = !state.sharedOn || pl.status === "no";
+      btnCrowd.addEventListener("click", async () => {
+        const v = prompt(`How was ${p.name} this Friday?\n(e.g. "Hall full by 1:05pm, overflow at car park L2")`, "");
+        if (!v || !v.trim()) return;
+        const ok = await sendReport(p, "crowd", { note: v.trim().slice(0, 140) });
+        if (ok) { await loadShared(state.here); render(); }
+        $("status").textContent = ok ? "Thanks — your report helps others next Friday." : "Couldn't send the report, try again later.";
+      });
       const btnYes = li.querySelector('[data-act="yes"]');
       const btnNo = li.querySelector('[data-act="no"]');
       const btnReset = li.querySelector('[data-act="reset"]');
       // Offer yes/no only while it's still a question; once marked, offer undo.
-      btnYes.hidden = btnNo.hidden = userMarked || pl.status === "yes";
+      btnYes.hidden = btnNo.hidden = userMarked || p.kind === "masjid" || p.jumaat === true;
       btnReset.hidden = !userMarked;
       li.querySelector('[data-act="ics"]').hidden = pl.status === "no";
+      const btnPin = li.querySelector('[data-act="pin"]');
+      btnPin.hidden = !p.pinOf || !map;
+      btnPin.addEventListener("click", () => startPinFix(p));
       btnYes.addEventListener("click", () => mark("yes"));
       btnNo.addEventListener("click", () => mark("no"));
       btnReset.addEventListener("click", () => {
@@ -336,10 +433,10 @@
       list.appendChild(li);
 
       if (map) {
-        const mk = L.circleMarker([p.lat, p.lng], {
+        const mk = L.circleMarker(mapPos, {
           radius: p.kind === "masjid" ? 9 : 7,
           color: pl.status === "yes" ? "#0f766e" : "#b45309",
-          fillOpacity: 0.85, weight: 2,
+          fillOpacity: p.approx ? 0.15 : 0.85, weight: 2, dashArray: p.approx ? "3 3" : null,
         }).addTo(map).bindPopup(`${p.name.replace(/[<>&]/g, "")}<br>${fmtDist(pl.dist)} · ~${pl.walkMin} min walk`);
         mk.on("click", () => {
           document.querySelectorAll(".item.active").forEach((x) => x.classList.remove("active"));
@@ -373,8 +470,9 @@
       state.hereMarker = L.marker([here.lat, here.lng]).addTo(map).bindPopup("You are here");
     }
     $("status").textContent = "Loading prayer time and nearby mosques…";
-    const [z, m] = await Promise.all([loadZuhr(here.lat, here.lng), loadMosques(here)]);
+    const [z, m] = await Promise.all([loadZuhr(here.lat, here.lng), loadMosques(here), loadShared(here)]);
     renderHero(z);
+    applySharedPins(m.places);
     state.places = m.places;
     state.offline = m.offline;
     render();

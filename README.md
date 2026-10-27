@@ -21,17 +21,34 @@ go and when to leave.
 - Works without GPS: pick Mid Valley, The Gardens, Bangsar South, KL Sentral or KLCC.
 
 ## Run it
-It is plain static files, with no build step and no backend:
+The app is plain static files, with no build step:
 
 ```bash
 python3 -m http.server 8000   # open http://localhost:8000
 ```
 
-Deploy the folder to any static host (Vercel, Netlify, GitHub Pages).
-GPS needs HTTPS (or localhost).
+Without a backend, marks, notes and pin fixes stay on your phone only.
+
+## Deploy on Vercel (with shared reports)
+1. On [vercel.com](https://vercel.com), **Add New → Project**, import
+   `7YMERA/JumaatFinder`, leave every setting as default, **Deploy**.
+   The site goes live at `https://<project>.vercel.app` (HTTPS, so GPS works).
+2. In the project: **Storage → Create Database → Neon (Postgres)**, free plan,
+   connect it to the project. This adds `DATABASE_URL` automatically.
+3. **Deployments → Redeploy**. The `reports` table is created on first use.
+
+With the database connected, everyone shares:
+- ✅/❌ "Has Jumaat" votes (one per person per place; surau with more ✅ than ❌
+  show as confirmed for everyone),
+- 📣 crowd reports ("hall full by 1:05pm"), shown for 35 days,
+- 📍 pin fixes (a listed surau moves once two people agree).
+
+`api/reports.js` validates input, keeps people's IPs only as salted hashes,
+and limits each person to 20 reports an hour. Optionally set `IP_SALT` to a
+random string in the project's environment variables.
 
 ## Official data
-`data/surau_jumaat_selangor.json` holds the **108 surau approved for Solat Jumaat**
+`data/surau_jumaat_selangor.json` holds the **113 surau approved for Solat Jumaat**
 listed on the [JAIS e-Masjid](https://e-masjid.jais.gov.my/dashboard/listsuraujumaat)
 portal (Petaling, Hulu Langat, Hulu Selangor, Gombak, Klang), geocoded with
 OpenStreetMap Nominatim. `precision` says how each pin was found: `poi` (the

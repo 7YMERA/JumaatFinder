@@ -1188,5 +1188,60 @@ window.JUMAAT_OFFICIAL = [
 "precision": "street",
 "source": "JAIS",
 "source_url": "https://e-masjid.jais.gov.my/dashboard/listsuraujumaat"
+},
+{
+"name": "Surau Baiturrahman 9",
+"address": "Jalan Indah 9/19, Seksyen 9, Putra Height, 47650 Subang Jaya 47650",
+"district": "Petaling",
+"state": "Selangor",
+"lat": 3.001309,
+"lng": 101.573467,
+"precision": "postcode",
+"source": "JAIS",
+"source_url": "https://e-masjid.jais.gov.my/dashboard/listsurau"
+},
+{
+"name": "Surau Al- Amin Pjs 10",
+"address": "Jln Cempedak Tmn Dato’ Hormat 46000 Petaling 46000",
+"district": "Petaling",
+"state": "Selangor",
+"lat": 3.094092,
+"lng": 101.637221,
+"precision": "postcode",
+"source": "JAIS",
+"source_url": "https://e-masjid.jais.gov.my/dashboard/listsurau"
+},
+{
+"name": "Surau Addin",
+"address": "No 51, Jalan Pahat Sj 15/Sj Seksyen 15, Dataran Otomobil 40200",
+"district": "Petaling",
+"state": "Selangor",
+"lat": 3.06478,
+"lng": 101.527706,
+"precision": "poi",
+"source": "JAIS",
+"source_url": "https://e-masjid.jais.gov.my/dashboard/listsurau"
+},
+{
+"name": "Surau Al-Falah",
+"address": "Menengah Teknikal Shah Jalan Batu Tiga 40300",
+"district": "Petaling",
+"state": "Selangor",
+"lat": 3.047951,
+"lng": 101.55552,
+"precision": "poi",
+"source": "JAIS",
+"source_url": "https://e-masjid.jais.gov.my/dashboard/listsurau"
+},
+{
+"name": "Al-Faaizeen",
+"address": "Jalan Anggerik 1, Prima Beruntung Bukit Beruntung 48300",
+"district": "Hulu Selangor",
+"state": "Selangor",
+"lat": 3.410334,
+"lng": 101.541221,
+"precision": "poi",
+"source": "JAIS",
+"source_url": "https://e-masjid.jais.gov.my/dashboard/listsurau"
 }
 ];
